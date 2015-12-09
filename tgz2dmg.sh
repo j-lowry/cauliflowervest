@@ -69,7 +69,11 @@ shift ; shift
 
 if [[ -z "$PKGMAKER" ]]; then
   echo cannot find executable Apple packagemaker tool.
-  exit 1
+  PKGBUILD=$(which pkgbuild)
+  if [[ -z "$PKGBUILD" ]]; then
+    echo "cannot find executable Apple pkgbuild tool, exit."
+    exit 1
+  fi
 fi
 
 TMPDIR=$(mktemp -d tgz2dmgXXXXXX)
@@ -111,12 +115,16 @@ while [[ "$#" -gt 0 ]]; do
     fi
   else
     if [[ "$next" = "script" ]]; then
-      cp "$1" "$TMPDIR/scripts"
+      if [[ $PKGBUILD == "" ]]; then
+        cp "$1" "${TMPDIR}/scripts"
+      else
+        cp roots.pem "${TMPDIR}/scripts"
+      fi
     elif [[ "$next" = "rsrc" ]]; then
-      cp "$1" "$TMPDIR/resources"
+      cp "$1" "${TMPDIR}/resources"
     elif [[ "$next" = "rsrcdir" ]]; then
-      [[ -f "$1" ]] && cp "$1" "$TMPDIR/resources"
-      [[ -d "$1" ]] && cp -R "$1" "$TMPDIR/resources"
+      [[ -f "$1" ]] && cp "$1" "${TMPDIR}/resources"
+      [[ -d "$1" ]] && cp -R "$1" "${TMPDIR}/resources"
     elif [[ "$next" = "id" ]]; then
       ID="$1"
     elif [[ "$next" = "version" ]]; then
@@ -125,11 +133,11 @@ while [[ "$#" -gt 0 ]]; do
       src="$1"
       shift
       dst="$1"
-      cp "$src" "$TMPDIR/contents/$dst"
+      cp "$src" "${TMPDIR}/contents/$dst"
     elif [[ "$next" = "pyver" ]]; then
-      echo "$1" > "$TMPDIR/resources/python_version"
+      echo "$1" > "${TMPDIR}/resources/python_version"
     elif [[ "$next" = "vep" ]]; then
-      cp "$1" "$TMPDIR/resources/vep"
+      cp "$1" "${TMPDIR}/resources/vep"
     fi
     next=""
   fi
@@ -144,22 +152,33 @@ cd "$TMPDIR/contents"
 cd "$ORIGPWD"
 
 if [[ -z "$PKGONLY" ]]; then
-  pkgout="$TMPDIR/pkg/cauliflowervest.pkg"
+  pkgout="${TMPDIR}/pkg/cauliflowervest.pkg"
 else
   pkgout="$OUT"
 fi
 
-${PKGMAKER} \
---root "$TMPDIR/contents" \
---id "$ID" \
---out "$pkgout" \
---resources "$TMPDIR/resources" \
---scripts "$TMPDIR/scripts" \
---version "$VERSION"
-
-if [[ -z "$PKGONLY" ]]; then
-  hdiutil create -srcfolder "$TMPDIR/pkg" -layout NONE -volname "Cauliflower Vest" "$OUT"
+if [[ ${PKGMAKER} != "" ]]; then
+  echo "Using packagemaker"
+  ${PKGMAKER} \
+  --root "$TMPDIR/contents" \
+  --id "$ID" \
+  --out "$pkgout" \
+  --resources "$TMPDIR/resources" \
+  --scripts "$TMPDIR/scripts" \
+  --version "$VERSION"
+else
+  echo "Using pkgbuild"
+  cp -R "${TMPDIR}/resources" "${TMPDIR}/scripts/Resources"
+  ${PKGBUILD} --root "${TMPDIR}/contents" \
+    --identifier "$ID" \
+    --scripts "${TMPDIR}/scripts" \
+    --version "${VERSION}" \
+    ${pkgout}
 fi
 
-rm -rf "$TMPDIR"
+if [[ -z "$PKGONLY" ]]; then
+  hdiutil create -srcfolder "${TMPDIR}/pkg" -layout NONE -volname "Cauliflower Vest" "$OUT"
+fi
+
+rm -rf "${TMPDIR}"
 echo output at "$OUT"
